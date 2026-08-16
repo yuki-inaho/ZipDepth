@@ -50,6 +50,7 @@ wandb/
 .vscode/
 .idea/
 .serena/
+.playwright-cli/
 *.swp
 *.swo
 

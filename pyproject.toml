@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zipdepth"
+version = "1.0.0"
+description = "ZipDepth — efficient monocular depth estimation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "LICENSE" }
+
+# Minimal set required to run inference (scripts/infer.py).
+dependencies = [
+    "torch==2.13.0",
+    "torchvision==0.28.0",
+    "numpy>=2.0.0",
+    "opencv-python-headless>=4.10.0",
+    "Pillow>=10.0.0",
+    "matplotlib>=3.9.0",
+    "tqdm>=4.66.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Gradio demo app (app.py). gr.ImageSlider is built into Gradio 5+, so no
+# third-party image-slider component is needed.
+demo = [
+    "gradio>=5.0.0",
+    "trimesh>=4.0.0",
+]
+# Training pipeline (scripts/train.py, prepare_index.py).
+# PyTurboJPEG is required here (not just in `turbo`): zipdepth/data/dataset.py
+# does `from turbojpeg import TurboJPEG, TJPF_RGB` unconditionally at module
+# level (unlike predictor.py, which imports it in a try/except), so
+# `zipdepth.data` — and therefore scripts/train.py — cannot even be imported
+# without it (verified: ModuleNotFoundError otherwise).
+training = [
+    "albumentations>=2.0.0",
+    "h5py>=3.10.0",
+    "tensorboard>=2.16.0",
+    "PyTurboJPEG>=1.7.0,<2.0",
+]
+# ONNX / TorchScript export (scripts/export.py).
+# onnxscript is required because torch.onnx.export() defaults to dynamo=True
+# in this torch version — without it, export fails with
+# "ModuleNotFoundError: No module named 'onnxscript'" (verified).
+export = [
+    "onnx>=1.16.0",
+    "onnxsim>=0.4.36",
+    "onnxscript>=0.7.0",
+]
+# FLOPs measurement for scripts/benchmark.py.
+benchmark = [
+    "fvcore>=0.1.5",
+    "thop>=0.1.1",
+]
+# Faster JPEG decode in predictor.py / dataset.py — optional (falls back to cv2).
+# Requires system libturbojpeg; PyTurboJPEG 2.x needs libjpeg-turbo 3.x while most
+# systems still ship 2.x, so the dependency is pinned below 2.0 (see requirements.txt).
+turbo = [
+    "PyTurboJPEG>=1.7.0,<2.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["zipdepth*"]
+
+# GTX 1070 (Pascal, sm_61) note:
+# PyTorch's default PyPI wheels (cu128/cu130 as of mid-2026) no longer ship Pascal
+# (sm_6x) kernels — confirmed by actually running a CUDA conv, which fails with
+# "no kernel image is available for execution on the device". The cu126 wheel
+# index still builds for sm_50/sm_60/sm_70/sm_75/sm_80/sm_86/sm_90, which covers
+# sm_61 via the sm_60 binary, and was verified working on this machine's GTX 1070.
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }

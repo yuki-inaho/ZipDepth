@@ -10,6 +10,10 @@ build/
 .eggs/
 
 # Virtual environments
+# .venv/ is uv's local environment — never commit it.
+# uv.lock IS tracked (do not ignore it): it pins the resolved dependency
+# versions (incl. the CUDA-specific torch/torchvision build) for reproducible
+# `uv sync`, so it belongs in version control like any other lockfile.
 venv/
 env/
 .venv/
@@ -42,9 +46,10 @@ log/
 *.tfevents.*
 wandb/
 
-# IDE
+# IDE / local tooling
 .vscode/
 .idea/
+.serena/
 *.swp
 *.swo
 

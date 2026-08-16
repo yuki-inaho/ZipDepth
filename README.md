@@ -92,13 +92,57 @@ The neck combines **SPPF** multi-scale pooling with a **Cross-Scale Fusion** mod
 
 ## 🔧 Installation
 
-**Requirements:** Python ≥ 3.9, PyTorch ≥ 2.4, CUDA (recommended)
+**Requirements:** Python ≥ 3.10, PyTorch ≥ 2.4, CUDA (recommended)
+
+### With [uv](https://docs.astral.sh/uv/) (recommended)
 
 ```bash
 git clone https://github.com/fabiotosi92/ZipDepth
 cd ZipDepth
 
-# Create and activate a virtual environment (recommended)
+uv sync                  # inference only
+uv sync --extra demo     # + Gradio demo app
+```
+
+`uv` creates `.venv/`, installs the pinned dependency set from `uv.lock`, and installs
+`zipdepth` itself in editable mode. Run anything through `uv run` — no manual activation:
+
+```bash
+uv run python scripts/infer.py \
+  --checkpoint checkpoints/zipdepth_base.pth \
+  --input assets/examples/im0.jpg
+```
+
+Optional dependency groups are declared in `pyproject.toml` and combine freely:
+
+| Extra | Installs | For |
+|-------|----------|-----|
+| `demo` | gradio, trimesh | `app.py` (Gradio demo) |
+| `training` | albumentations, h5py, tensorboard, PyTurboJPEG | `scripts/train.py` |
+| `export` | onnx, onnxsim, onnxscript | `scripts/export.py` |
+| `benchmark` | fvcore, thop | FLOPs in `scripts/benchmark.py` |
+| `turbo` | PyTurboJPEG | faster JPEG decode (needs system `libturbojpeg`) |
+
+`training` pulls in PyTurboJPEG too, because `zipdepth/data/dataset.py` imports `turbojpeg`
+unconditionally — unlike `predictor.py`, which guards it with `try/except`. `export` needs
+`onnxscript` because `torch.onnx.export()` defaults to the dynamo exporter in PyTorch 2.13.
+
+> **GPU architecture note:** `pyproject.toml` pins PyTorch to the **cu126** wheel index. The
+> default PyPI wheels (cu128/cu130) no longer ship Pascal kernels, so on a GTX 10-series card
+> `torch.cuda.is_available()` returns `True` but every convolution fails with
+> `no kernel image is available for execution on the device`. The cu126 build covers
+> `sm_50`–`sm_90`. On a Blackwell card (`sm_100`/`sm_120`) drop the `[[tool.uv.index]]` /
+> `[tool.uv.sources]` block at the bottom of `pyproject.toml` to fall back to the default wheels.
+
+> **`torch.compile` needs compute capability ≥ 7.0.** Its Triton backend refuses anything
+> older, so on Pascal (`sm_6x`) both `infer.py --compile` and the `torch.compile` row of
+> `benchmark.py` abort with `GPUTooOldForTriton`. Use `benchmark.py --no-compile` there;
+> eager and fused FP32 measurements are unaffected. Consumer Pascal also runs FP16 at 1/64
+> of its FP32 rate, so `--fp16` makes those cards *slower*, not faster.
+
+### With pip
+
+```bash
 python -m venv venv
 source venv/bin/activate
 
@@ -168,6 +212,40 @@ python scripts/infer.py \
   --checkpoint checkpoints/zipdepth_base.pth \
   --input assets/examples/clip.mp4
 ```
+
+---
+
+## 🖥️ Gradio Demo
+
+An interactive single-image demo lives in `app.py`:
+
+```bash
+uv sync --extra demo
+uv run python app.py          # http://127.0.0.1:7860  (override with SERVER_PORT)
+```
+
+| Tab | Shows |
+|-----|-------|
+| **Depth** | Colorized disparity map, plus resolution / latency / value range |
+| **Compare** | Input ↔ depth wipe slider |
+| **3D View** | Triangulated mesh, unprojected with a pinhole model |
+| **Download** | Colorized PNG, 16-bit normalized disparity PNG, raw `.npy`, and the `.glb` mesh |
+
+The **Settings** panel selects the checkpoint (GPU or NPU variant), inference resolution,
+and colormap. A separate **3D reconstruction** panel holds the assumed FOV, near/far distance,
+mesh resolution, edge-removal threshold, and a background cutoff that drops the sky — which
+sits at disparity ≈ 0 and would otherwise become a backdrop that dwarfs the subject.
+
+> **On the 3D tab:** ZipDepth predicts *affine-invariant disparity* — relative depth whose
+> scale and shift are undetermined. It cannot recover a real-world scale, and it does not
+> estimate a field of view. The FOV and near/far sliders are therefore **assumptions the user
+> supplies**: they pick the affine transform the model leaves free, via
+> `1/depth = d_norm · (1/near − 1/far) + 1/far`. The resulting mesh is a plausible
+> visualization, not a measurement.
+
+The app detects the device by actually running a convolution on CUDA rather than trusting
+`torch.cuda.is_available()`, and falls back to CPU if that fails — see the GPU architecture
+note above for why that distinction matters.
 
 ---
 
